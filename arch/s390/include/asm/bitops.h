@@ -56,66 +56,30 @@ __bitops_byte(unsigned long nr, volatile unsigned long *ptr)
 	return ((unsigned char *)ptr) + ((nr ^ (BITS_PER_LONG - 8)) >> 3);
 }
 
-static inline void arch_set_bit(unsigned long nr, volatile unsigned long *ptr)
+static __always_inline void arch_set_bit(unsigned long nr, volatile unsigned long *ptr)
 {
 	unsigned long *addr = __bitops_word(nr, ptr);
 	unsigned long mask;
 
-#ifdef CONFIG_HAVE_MARCH_ZEC12_FEATURES
-	if (__builtin_constant_p(nr)) {
-		unsigned char *caddr = __bitops_byte(nr, ptr);
-
-		asm volatile(
-			"oi	%0,%b1\n"
-			: "+Q" (*caddr)
-			: "i" (1 << (nr & 7))
-			: "cc", "memory");
-		return;
-	}
-#endif
 	mask = 1UL << (nr & (BITS_PER_LONG - 1));
 	__atomic64_or(mask, (long *)addr);
 }
 
-static inline void arch_clear_bit(unsigned long nr, volatile unsigned long *ptr)
+static __always_inline void arch_clear_bit(unsigned long nr, volatile unsigned long *ptr)
 {
 	unsigned long *addr = __bitops_word(nr, ptr);
 	unsigned long mask;
 
-#ifdef CONFIG_HAVE_MARCH_ZEC12_FEATURES
-	if (__builtin_constant_p(nr)) {
-		unsigned char *caddr = __bitops_byte(nr, ptr);
-
-		asm volatile(
-			"ni	%0,%b1\n"
-			: "+Q" (*caddr)
-			: "i" (~(1 << (nr & 7)))
-			: "cc", "memory");
-		return;
-	}
-#endif
 	mask = ~(1UL << (nr & (BITS_PER_LONG - 1)));
 	__atomic64_and(mask, (long *)addr);
 }
 
-static inline void arch_change_bit(unsigned long nr,
-				   volatile unsigned long *ptr)
+static __always_inline void arch_change_bit(unsigned long nr,
+					    volatile unsigned long *ptr)
 {
 	unsigned long *addr = __bitops_word(nr, ptr);
 	unsigned long mask;
 
-#ifdef CONFIG_HAVE_MARCH_ZEC12_FEATURES
-	if (__builtin_constant_p(nr)) {
-		unsigned char *caddr = __bitops_byte(nr, ptr);
-
-		asm volatile(
-			"xi	%0,%b1\n"
-			: "+Q" (*caddr)
-			: "i" (1 << (nr & 7))
-			: "cc", "memory");
-		return;
-	}
-#endif
 	mask = 1UL << (nr & (BITS_PER_LONG - 1));
 	__atomic64_xor(mask, (long *)addr);
 }
@@ -241,7 +205,9 @@ static inline void arch___clear_bit_unlock(unsigned long nr,
 	arch___clear_bit(nr, ptr);
 }
 
-#include <asm-generic/bitops-instrumented.h>
+#include <asm-generic/bitops/instrumented-atomic.h>
+#include <asm-generic/bitops/instrumented-non-atomic.h>
+#include <asm-generic/bitops/instrumented-lock.h>
 
 /*
  * Functions which use MSB0 bit numbering.

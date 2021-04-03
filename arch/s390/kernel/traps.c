@@ -13,6 +13,8 @@
  * 'Traps.c' handles hardware traps and faults after we have saved some
  * state in 'asm.s'.
  */
+#include "asm/irqflags.h"
+#include "asm/ptrace.h"
 #include <linux/kprobes.h>
 #include <linux/kdebug.h>
 #include <linux/extable.h>
@@ -23,7 +25,9 @@
 #include <linux/slab.h>
 #include <linux/uaccess.h>
 #include <linux/cpu.h>
+#include <linux/entry-common.h>
 #include <asm/fpu/api.h>
+#include <asm/vtime.h>
 #include "entry.h"
 
 static inline void __user *get_trap_ip(struct pt_regs *regs)
@@ -50,16 +54,8 @@ void do_report_trap(struct pt_regs *regs, int si_signo, int si_code, char *str)
         } else {
                 const struct exception_table_entry *fixup;
 		fixup = s390_search_extables(regs->psw.addr);
-                if (fixup)
-			regs->psw.addr = extable_fixup(fixup);
-		else {
-			enum bug_trap_type btt;
-
-			btt = report_bug(regs->psw.addr, regs);
-			if (btt == BUG_TRAP_TYPE_WARN)
-				return;
+		if (!fixup || !ex_handle(fixup, regs))
 			die(regs, str);
-		}
         }
 }
 
@@ -245,6 +241,27 @@ void space_switch_exception(struct pt_regs *regs)
 	do_trap(regs, SIGILL, ILL_PRVOPC, "space switch event");
 }
 
+void monitor_event_exception(struct pt_regs *regs)
+{
+	const struct exception_table_entry *fixup;
+
+	if (user_mode(regs))
+		return;
+
+	switch (report_bug(regs->psw.addr - (regs->int_code >> 16), regs)) {
+	case BUG_TRAP_TYPE_NONE:
+		fixup = s390_search_extables(regs->psw.addr);
+		if (fixup)
+			ex_handle(fixup, regs);
+		break;
+	case BUG_TRAP_TYPE_WARN:
+		break;
+	case BUG_TRAP_TYPE_BUG:
+		die(regs, "monitor event");
+		break;
+	}
+}
+
 void kernel_stack_overflow(struct pt_regs *regs)
 {
 	bust_spinlocks(1);
@@ -255,8 +272,84 @@ void kernel_stack_overflow(struct pt_regs *regs)
 }
 NOKPROBE_SYMBOL(kernel_stack_overflow);
 
+static void __init test_monitor_call(void)
+{
+	int val = 1;
+
+	asm volatile(
+		"	mc	0,0\n"
+		"0:	xgr	%0,%0\n"
+		"1:\n"
+		EX_TABLE(0b,1b)
+		: "+d" (val));
+	if (!val)
+		panic("Monitor call doesn't work!\n");
+}
+
 void __init trap_init(void)
 {
 	sort_extable(__start_dma_ex_table, __stop_dma_ex_table);
 	local_mcck_enable();
+	test_monitor_call();
+}
+
+void noinstr __do_pgm_check(struct pt_regs *regs)
+{
+	unsigned long last_break = S390_lowcore.breaking_event_addr;
+	unsigned int trapnr, syscall_redirect = 0;
+	irqentry_state_t state;
+
+	regs->int_code = *(u32 *)&S390_lowcore.pgm_ilc;
+	regs->int_parm_long = S390_lowcore.trans_exc_code;
+
+	state = irqentry_enter(regs);
+
+	if (user_mode(regs)) {
+		update_timer_sys();
+		if (last_break < 4096)
+			last_break = 1;
+		current->thread.last_break = last_break;
+		regs->args[0] = last_break;
+	}
+
+	if (S390_lowcore.pgm_code & 0x0200) {
+		/* transaction abort */
+		memcpy(&current->thread.trap_tdb, &S390_lowcore.pgm_tdb, 256);
+	}
+
+	if (S390_lowcore.pgm_code & PGM_INT_CODE_PER) {
+		if (user_mode(regs)) {
+			struct per_event *ev = &current->thread.per_event;
+
+			set_thread_flag(TIF_PER_TRAP);
+			ev->address = S390_lowcore.per_address;
+			ev->cause = *(u16 *)&S390_lowcore.per_code;
+			ev->paid = S390_lowcore.per_access_id;
+		} else {
+			/* PER event in kernel is kprobes */
+			__arch_local_irq_ssm(regs->psw.mask & ~PSW_MASK_PER);
+			do_per_trap(regs);
+			goto out;
+		}
+	}
+
+	if (!irqs_disabled_flags(regs->psw.mask))
+		trace_hardirqs_on();
+	__arch_local_irq_ssm(regs->psw.mask & ~PSW_MASK_PER);
+
+	trapnr = regs->int_code & PGM_INT_CODE_MASK;
+	if (trapnr)
+		pgm_check_table[trapnr](regs);
+	syscall_redirect = user_mode(regs) && test_pt_regs_flag(regs, PIF_SYSCALL);
+out:
+	local_irq_disable();
+	irqentry_exit(regs, state);
+
+	if (syscall_redirect) {
+		enter_from_user_mode(regs);
+		local_irq_enable();
+		regs->orig_gpr2 = regs->gprs[2];
+		do_syscall(regs);
+		exit_to_user_mode();
+	}
 }

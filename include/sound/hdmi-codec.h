@@ -2,7 +2,7 @@
 /*
  * hdmi-codec.h - HDMI Codec driver API
  *
- * Copyright (C) 2014 Texas Instruments Incorporated - http://www.ti.com
+ * Copyright (C) 2014 Texas Instruments Incorporated - https://www.ti.com
  *
  * Author: Jyri Sarha <jsarha@ti.com>
  */
@@ -34,6 +34,11 @@ struct hdmi_codec_daifmt {
 	unsigned int frame_clk_inv:1;
 	unsigned int bit_clk_master:1;
 	unsigned int frame_clk_master:1;
+	/* bit_fmt could be standard PCM format or
+	 * IEC958 encoded format. ALSA IEC958 plugin will pass
+	 * IEC958_SUBFRAME format to the underneath driver.
+	 */
+	snd_pcm_format_t bit_fmt;
 };
 
 /*
@@ -46,6 +51,9 @@ struct hdmi_codec_params {
 	int sample_width;
 	int channels;
 };
+
+typedef void (*hdmi_codec_plugged_cb)(struct device *dev,
+				      bool plugged);
 
 struct hdmi_codec_pdata;
 struct hdmi_codec_ops {
@@ -73,7 +81,8 @@ struct hdmi_codec_ops {
 	 * Mute/unmute HDMI audio stream.
 	 * Optional
 	 */
-	int (*digital_mute)(struct device *dev, void *data, bool enable);
+	int (*mute_stream)(struct device *dev, void *data,
+			   bool enable, int direction);
 
 	/*
 	 * Provides EDID-Like-Data from connected HDMI device.
@@ -88,6 +97,17 @@ struct hdmi_codec_ops {
 	 */
 	int (*get_dai_id)(struct snd_soc_component *comment,
 			  struct device_node *endpoint);
+
+	/*
+	 * Hook callback function to handle connector plug event.
+	 * Optional
+	 */
+	int (*hook_plugged_cb)(struct device *dev, void *data,
+			       hdmi_codec_plugged_cb fn,
+			       struct device *codec_dev);
+
+	/* bit field */
+	unsigned int no_capture_mute:1;
 };
 
 /* HDMI codec initalization data */
@@ -98,6 +118,9 @@ struct hdmi_codec_pdata {
 	int max_i2s_channels;
 	void *data;
 };
+
+struct snd_soc_component;
+struct snd_soc_jack;
 
 #define HDMI_CODEC_DRV_NAME "hdmi-audio-codec"
 

@@ -127,8 +127,8 @@ static struct hlist_head *get_mapinfo_hash_bucket(struct sockaddr_storage *,
 /**
  * iwpm_create_mapinfo - Store local and mapped IPv4/IPv6 address
  *                       info in a hash table
- * @local_addr: Local ip/tcp address
- * @mapped_addr: Mapped local ip/tcp address
+ * @local_sockaddr: Local ip/tcp address
+ * @mapped_sockaddr: Mapped local ip/tcp address
  * @nl_client: The index of the netlink client
  * @map_flags: IWPM mapping flags
  */
@@ -174,7 +174,7 @@ int iwpm_create_mapinfo(struct sockaddr_storage *local_sockaddr,
 /**
  * iwpm_remove_mapinfo - Remove local and mapped IPv4/IPv6 address
  *                       info from the hash table
- * @local_addr: Local ip/tcp address
+ * @local_sockaddr: Local ip/tcp address
  * @mapped_local_addr: Mapped local ip/tcp address
  *
  * Returns err code if mapping info is not found in the hash table,
@@ -645,7 +645,7 @@ static int send_mapinfo_num(u32 mapping_num, u8 nl_client, int iwpm_pid)
 
 	nlmsg_end(skb, nlh);
 
-	ret = rdma_nl_unicast(skb, iwpm_pid);
+	ret = rdma_nl_unicast(&init_net, skb, iwpm_pid);
 	if (ret) {
 		skb = NULL;
 		err_str = "Unable to send a nlmsg";
@@ -655,8 +655,7 @@ static int send_mapinfo_num(u32 mapping_num, u8 nl_client, int iwpm_pid)
 	return 0;
 mapinfo_num_error:
 	pr_info("%s: %s\n", __func__, err_str);
-	if (skb)
-		dev_kfree_skb(skb);
+	dev_kfree_skb(skb);
 	return ret;
 }
 
@@ -674,7 +673,7 @@ static int send_nlmsg_done(struct sk_buff *skb, u8 nl_client, int iwpm_pid)
 		return -ENOMEM;
 	}
 	nlh->nlmsg_type = NLMSG_DONE;
-	ret = rdma_nl_unicast(skb, iwpm_pid);
+	ret = rdma_nl_unicast(&init_net, skb, iwpm_pid);
 	if (ret)
 		pr_warn("%s Unable to send a nlmsg\n", __func__);
 	return ret;
@@ -778,8 +777,7 @@ send_mapping_info_unlock:
 send_mapping_info_exit:
 	if (ret) {
 		pr_warn("%s: %s (ret = %d)\n", __func__, err_str, ret);
-		if (skb)
-			dev_kfree_skb(skb);
+		dev_kfree_skb(skb);
 		return ret;
 	}
 	send_nlmsg_done(skb, nl_client, iwpm_pid);
@@ -824,7 +822,7 @@ int iwpm_send_hello(u8 nl_client, int iwpm_pid, u16 abi_version)
 		goto hello_num_error;
 	nlmsg_end(skb, nlh);
 
-	ret = rdma_nl_unicast(skb, iwpm_pid);
+	ret = rdma_nl_unicast(&init_net, skb, iwpm_pid);
 	if (ret) {
 		skb = NULL;
 		err_str = "Unable to send a nlmsg";
@@ -834,7 +832,6 @@ int iwpm_send_hello(u8 nl_client, int iwpm_pid, u16 abi_version)
 	return 0;
 hello_num_error:
 	pr_info("%s: %s\n", __func__, err_str);
-	if (skb)
-		dev_kfree_skb(skb);
+	dev_kfree_skb(skb);
 	return ret;
 }

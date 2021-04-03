@@ -61,19 +61,6 @@ static const struct clk_ops stm_pll3200c32_ops;
 static const struct clk_ops stm_pll3200c32_a9_ops;
 static const struct clk_ops stm_pll4600c28_ops;
 
-static const struct clkgen_pll_data st_pll3200c32_407_a0 = {
-	/* 407 A0 */
-	.pdn_status	= CLKGEN_FIELD(0x2a0,	0x1,			8),
-	.pdn_ctrl	= CLKGEN_FIELD(0x2a0,	0x1,			8),
-	.locked_status	= CLKGEN_FIELD(0x2a0,	0x1,			24),
-	.ndiv		= CLKGEN_FIELD(0x2a4,	C32_NDIV_MASK,		16),
-	.idf		= CLKGEN_FIELD(0x2a4,	C32_IDF_MASK,		0x0),
-	.num_odfs = 1,
-	.odf		= { CLKGEN_FIELD(0x2b4, C32_ODF_MASK,		0) },
-	.odf_gate	= { CLKGEN_FIELD(0x2b4,	0x1,			6) },
-	.ops		= &stm_pll3200c32_ops,
-};
-
 static const struct clkgen_pll_data st_pll3200c32_cx_0 = {
 	/* 407 C0 PLL0 */
 	.pdn_status	= CLKGEN_FIELD(0x2a0,	0x1,			8),
@@ -143,12 +130,11 @@ static struct clkgen_pll_data st_pll4600c28_418_a9 = {
  * parent - fixed parent.  No clk_set_parent support
  */
 
-/**
+/*
  * PLL clock that is integrated in the ClockGenA instances on the STiH415
  * and STiH416.
  *
  * @hw: handle between common and hardware-specific interfaces.
- * @type: PLL instance type.
  * @regs_base: base of the PLL configuration register(s).
  *
  */

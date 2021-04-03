@@ -17,7 +17,6 @@
 #include "cs-etm.h"
 #include "cs-etm-decoder.h"
 #include "intlist.h"
-#include "util.h"
 
 /* use raw logging */
 #ifdef CS_DEBUG_RAW
@@ -420,19 +419,10 @@ cs_etm_decoder__buffer_range(struct cs_etm_queue *etmq,
 	packet->last_instr_subtype = elem->last_i_subtype;
 	packet->last_instr_cond = elem->last_instr_cond;
 
-	switch (elem->last_i_type) {
-	case OCSD_INSTR_BR:
-	case OCSD_INSTR_BR_INDIRECT:
+	if (elem->last_i_type == OCSD_INSTR_BR || elem->last_i_type == OCSD_INSTR_BR_INDIRECT)
 		packet->last_instr_taken_branch = elem->last_instr_exec;
-		break;
-	case OCSD_INSTR_ISB:
-	case OCSD_INSTR_DSB_DMB:
-	case OCSD_INSTR_WFI_WFE:
-	case OCSD_INSTR_OTHER:
-	default:
+	else
 		packet->last_instr_taken_branch = false;
-		break;
-	}
 
 	packet->last_instr_size = elem->last_instr_sz;
 
@@ -565,12 +555,16 @@ static ocsd_datapath_resp_t cs_etm_decoder__gen_trace_elem_printer(
 		resp = cs_etm_decoder__set_tid(etmq, packet_queue,
 					       elem, trace_chan_id);
 		break;
+	/* Unused packet types */
+	case OCSD_GEN_TRC_ELEM_I_RANGE_NOPATH:
 	case OCSD_GEN_TRC_ELEM_ADDR_NACC:
 	case OCSD_GEN_TRC_ELEM_CYCLE_COUNT:
 	case OCSD_GEN_TRC_ELEM_ADDR_UNKNOWN:
 	case OCSD_GEN_TRC_ELEM_EVENT:
 	case OCSD_GEN_TRC_ELEM_SWTRACE:
 	case OCSD_GEN_TRC_ELEM_CUSTOM:
+	case OCSD_GEN_TRC_ELEM_SYNC_MARKER:
+	case OCSD_GEN_TRC_ELEM_MEMTRANS:
 	default:
 		break;
 	}

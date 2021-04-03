@@ -25,6 +25,7 @@ static void fsnotify_final_destroy_group(struct fsnotify_group *group)
 		group->ops->free_group_priv(group);
 
 	mem_cgroup_put(group->memcg);
+	mutex_destroy(&group->mark_mutex);
 
 	kfree(group);
 }
@@ -108,15 +109,14 @@ void fsnotify_put_group(struct fsnotify_group *group)
 	if (refcount_dec_and_test(&group->refcnt))
 		fsnotify_final_destroy_group(group);
 }
+EXPORT_SYMBOL_GPL(fsnotify_put_group);
 
-/*
- * Create a new fsnotify_group and hold a reference for the group returned.
- */
-struct fsnotify_group *fsnotify_alloc_group(const struct fsnotify_ops *ops)
+static struct fsnotify_group *__fsnotify_alloc_group(
+				const struct fsnotify_ops *ops, gfp_t gfp)
 {
 	struct fsnotify_group *group;
 
-	group = kzalloc(sizeof(struct fsnotify_group), GFP_KERNEL);
+	group = kzalloc(sizeof(struct fsnotify_group), gfp);
 	if (!group)
 		return ERR_PTR(-ENOMEM);
 
@@ -137,6 +137,24 @@ struct fsnotify_group *fsnotify_alloc_group(const struct fsnotify_ops *ops)
 
 	return group;
 }
+
+/*
+ * Create a new fsnotify_group and hold a reference for the group returned.
+ */
+struct fsnotify_group *fsnotify_alloc_group(const struct fsnotify_ops *ops)
+{
+	return __fsnotify_alloc_group(ops, GFP_KERNEL);
+}
+EXPORT_SYMBOL_GPL(fsnotify_alloc_group);
+
+/*
+ * Create a new fsnotify_group and hold a reference for the group returned.
+ */
+struct fsnotify_group *fsnotify_alloc_user_group(const struct fsnotify_ops *ops)
+{
+	return __fsnotify_alloc_group(ops, GFP_KERNEL_ACCOUNT);
+}
+EXPORT_SYMBOL_GPL(fsnotify_alloc_user_group);
 
 int fsnotify_fasync(int fd, struct file *file, int on)
 {
